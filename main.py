@@ -200,16 +200,14 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❓ Unknown command. Please use /start, /generate, /stats, or other valid commands.")
 
-async def delete_webhook(bot):
-    await bot.delete_webhook(drop_pending_updates=True)
-
-def main():
+async def main():
     TOKEN = "7870088297:AAHqUayOSDbrZXv4iwdWkV3V5_ulC_mBdMg"
     bot = Bot(token=TOKEN)
+    
+    # Properly delete webhook
+    await bot.delete_webhook(drop_pending_updates=True)
+    
     app = Application.builder().token(TOKEN).build()
-
-    # Delete webhook properly with asyncio
-    asyncio.run(delete_webhook(bot))
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(agree|disagree)$"))
@@ -221,7 +219,7 @@ def main():
     app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     print("Bot started...")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
