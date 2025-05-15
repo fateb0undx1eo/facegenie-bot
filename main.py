@@ -4,8 +4,18 @@ import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from telegram import Update, BotCommand
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import (
+    Update,
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes
+)
 
 import httpx  # Async HTTP client instead of requests
 
@@ -22,31 +32,81 @@ if not TOKEN:
     logger.error("BOT_TOKEN environment variable not set!")
     exit(1)
 
+# In-memory user data (replace with DB in production)
+user_data = {}  # Structure: {user_id: {'credits': int, 'unlimited': bool}}
+
 # Async command handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to the AI Face Generator Bot! Type /generate to get a face.")
+    user_id = update.effective_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"credits": 0, "unlimited": False}
+
+    keyboard = [
+        [InlineKeyboardButton("🔁 $1 = More Credits", callback_data="buy_credits")],
+        [InlineKeyboardButton("💎 $3 = Unlimited Faces", callback_data="buy_unlimited")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "👋 Welcome to the *AI Face Generator Bot!*\n\n"
+        "💬 Use /generate to get an AI-generated human face.\n\n"
+        "💰 Pricing:\n"
+        "- $1 = Extra Credits (per image)\n"
+        "- $3 = Unlimited Usage\n\n"
+        "👇 Choose a plan to proceed:",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
 
 async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user = user_data.get(user_id, {"credits": 0, "unlimited": False})
+
+    # Credit check
+    if not user["unlimited"] and user["credits"] <= 0:
+        await update.message.reply_text(
+            "⚠️ You don't have enough credits.\n\n"
+            "Use /start and buy credits or unlimited access."
+        )
+        return
+
     url = "https://thispersondoesnotexist.com/image"
     headers = {"User-Agent": "Mozilla/5.0"}
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10.0)
             if response.status_code == 200:
-                await update.message.reply_photo(photo=response.content, caption="Here is a new AI-generated face!")
+                if not user["unlimited"]:
+                    user_data[user_id]["credits"] -= 1
+                await update.message.reply_photo(photo=response.content, caption="Here's your AI-generated face 👤")
             else:
-                await update.message.reply_text("Failed to generate face. Please try again later.")
+                await update.message.reply_text("⚠️ Failed to generate face. Please try again.")
     except Exception as e:
         logger.error(f"Error generating face: {e}")
-        await update.message.reply_text("An error occurred while generating the face.")
+        await update.message.reply_text("⚠️ An error occurred while generating the face.")
+
+# Payment option handler (simulate purchase)
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    if query.data == "buy_credits":
+        user_data[user_id]["credits"] += 5  # Simulated purchase
+        await query.edit_message_text("✅ You've purchased *5 image credits*.\nUse /generate to try now!", parse_mode="Markdown")
+
+    elif query.data == "buy_unlimited":
+        user_data[user_id]["unlimited"] = True
+        await query.edit_message_text("✅ You've unlocked *unlimited access*!\nUse /generate anytime.", parse_mode="Markdown")
 
 # Error handler
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
     if isinstance(update, Update) and update.message:
-        await update.message.reply_text("Oops! Something went wrong. Please try again later.")
+        await update.message.reply_text("⚠️ Oops! Something went wrong. Please try again later.")
 
-# Keep-alive HTTP server for platforms like Replit or Render
+# Keep-alive HTTP server
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -59,88 +119,24 @@ def run_keepalive_server():
     logger.info(f"Starting keep-alive server on port {port}")
     server.serve_forever()
 
+# Main bot startup
 async def main():
-    # Build application
     app = Application.builder().token(TOKEN).build()
 
-    # Register commands for Telegram UI
     commands = [
-        BotCommand("start", "Start the bot"),
+        BotCommand("start", "Start the bot and view pricing"),
         BotCommand("generate", "Generate a new AI face"),
     ]
     await app.bot.set_my_commands(commands)
 
-    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("generate", generate))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_error_handler(error_handler)
 
-    # Start the bot
-    logger.info("Starting bot...")
+    logger.info("Bot is running...")
     await app.run_polling()
 
 if __name__ == "__main__":
-    # Run keepalive server in daemon thread so it doesn't block shutdown
     threading.Thread(target=run_keepalive_server, daemon=True).start()
-
-    # Run main async bot loop
     asyncio.run(main())
-import asyncio
-import os
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import requests
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-# Logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# Use environment variable for bot token
-TOKEN = os.environ.get("BOT_TOKEN")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Welcome to the AI Face Generator Bot! Type /generate to get a face.')
-
-async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        response = requests.get("https://thispersondoesnotexist.com", headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code == 200:
-            with open("face.jpg", "wb") as f:
-                f.write(response.content)
-            with open("face.jpg", "rb") as photo:
-                await update.message.reply_photo(photo=photo, caption="Here is a new AI-generated face!")
-        else:
-            await update.message.reply_text("Failed to generate face. Please try again later.")
-    except Exception as e:
-        logging.error(f"Error generating face: {e}")
-        await update.message.reply_text("An error occurred while generating the face.")
-
-# Dummy server to keep Render's or Replit’s web service alive
-class KeepAliveHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'Bot is alive!')
-
-def run_keepalive_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('', port), KeepAliveHandler)
-    server.serve_forever()
-
-async def run_bot():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("generate", generate))
-    await app.run_polling()
-
-if __name__ == "__main__":
-    threading.Thread(target=run_keepalive_server).start()
-    
-    # Use this instead of asyncio.run to avoid 'event loop is running' error
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_bot())
