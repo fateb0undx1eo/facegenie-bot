@@ -5,7 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Messa
 
 USER_DATA_FILE = "user_data.json"
 
-# Load user data from file or initialize empty dict
 def load_user_data():
     try:
         with open(USER_DATA_FILE, "r") as f:
@@ -32,7 +31,7 @@ async def send_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Please choose to Agree or Disagree."
     )
     await update.message.reply_text(
-        disclaimer_text, 
+        disclaimer_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -60,7 +59,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_user_data(user_data)
         await query.edit_message_text("🎉 Welcome to FaceGenie! 🧞‍♂️✨ I generate 100% AI-created faces. Let's begin!\n\nPlease type a custom username (this is just for our records, no connection with Telegram username).")
         return
-
     elif query.data == "disagree":
         await query.edit_message_text("⚠️ You disagreed with the terms. The bot will now end interaction. To use the bot, please start again and agree to the disclaimer.")
         return
@@ -82,7 +80,7 @@ def reset_monthly_credits(user):
     last_reset = datetime.datetime.strptime(user["last_reset"], "%Y-%m")
     if today.year > last_reset.year or today.month > last_reset.month:
         months_passed = (today.year - last_reset.year) * 12 + (today.month - last_reset.month)
-        user["credits"] += 5 * months_passed  # increase credits by 5 per month passed
+        user["credits"] += 5 * months_passed
         user["last_reset"] = today.strftime("%Y-%m")
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,28 +94,23 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = user_data[user_id]
 
-    # Monthly credit reset logic
     reset_monthly_credits(user)
 
-    # Reset ads_used_today if a new day
     if user["last_ad_day"] != today_str:
         user["ads_used_today"] = 0
         user["last_ad_day"] = today_str
 
-    # If subscribed - unlimited
     if user.get("subscribed", False):
         await send_ai_image(update)
         save_user_data(user_data)
         return
 
-    # Use credits if available
     if user["credits"] > 0:
         user["credits"] -= 1
         await send_ai_image(update)
         save_user_data(user_data)
         return
 
-    # No credits left, show options to watch ad or buy subscription
     keyboard = [
         [InlineKeyboardButton("▶️ Watch Ad to get 1 credit", callback_data="watch_ad")],
         [InlineKeyboardButton("💳 Buy Subscription ($3/month)", callback_data="buy_sub")]
@@ -132,9 +125,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user_data(user_data)
 
 async def send_ai_image(update: Update):
-    # The actual image URL (always from thispersondoesnotexist.com)
     img_url = "https://thispersondoesnotexist.com/image"
-
     await update.message.reply_photo(photo=img_url, caption="🖼️ Here is your AI-generated face! These images are AI-generated.")
 
 async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -150,7 +141,6 @@ async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = user_data[user_id]
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
 
-    # Reset ads_used_today if new day
     if user.get("last_ad_day") != today_str:
         user["ads_used_today"] = 0
         user["last_ad_day"] = today_str
@@ -159,11 +149,8 @@ async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ You have reached the max ad-earned credits for today (10). Please wait until tomorrow or subscribe for unlimited access.")
         return
 
-    # Simulate ad watch with a delay message
     await query.edit_message_text("▶️ Playing ad... Please wait a moment.")
-    # Here you could implement an actual ad or delay for real ads
 
-    # After "ad" increase credit by 1
     user["credits"] += 1
     user["ads_used_today"] += 1
     save_user_data(user_data)
@@ -204,13 +191,16 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❓ Unknown command. Please use /start, /generate, /stats, or other valid commands.")
 
 def main():
-    import os
-    TOKEN = os.getenv("TOKEN")
-    if not TOKEN:
-        print("Error: Please set TOKEN environment variable.")
-        return
+    from telegram import Bot
+    from telegram.ext import Application
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    TOKEN = "7870088297:AAHVv5rs5GbQ9iAG764aKFX64VrC36Tn6XQ"
+    app = Application.builder().token(TOKEN).build()
+
+    # DELETE WEBHOOK BEFORE POLLING
+    bot = Bot(TOKEN)
+    import asyncio
+    asyncio.run(bot.delete_webhook(drop_pending_updates=True))
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(agree|disagree)$"))
