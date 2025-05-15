@@ -1,7 +1,8 @@
 import json
 import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+import asyncio
 
 USER_DATA_FILE = "user_data.json"
 
@@ -57,10 +58,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "last_ad_day": None
             }
             save_user_data(user_data)
-        await query.edit_message_text("🎉 Welcome to FaceGenie! 🧞‍♂️✨ I generate 100% AI-created faces. Let's begin!\n\nPlease type a custom username (this is just for our records, no connection with Telegram username).")
+        await query.edit_message_text(
+            "🎉 Welcome to FaceGenie! 🧞‍♂️✨ I generate 100% AI-created faces. Let's begin!\n\n"
+            "Please type a custom username (this is just for our records, no connection with Telegram username)."
+        )
         return
     elif query.data == "disagree":
-        await query.edit_message_text("⚠️ You disagreed with the terms. The bot will now end interaction. To use the bot, please start again and agree to the disclaimer.")
+        await query.edit_message_text(
+            "⚠️ You disagreed with the terms. The bot will now end interaction. To use the bot, please start again and agree to the disclaimer."
+        )
         return
 
 async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,7 +77,11 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
         username = update.message.text.strip()
         user_data[user_id]["username"] = username
         save_user_data(user_data)
-        await update.message.reply_text(f"✅ Username set to: {username}\n\nYou have *5 free credits* to generate AI faces this month.\nUse /generate to get your first AI face!", parse_mode="Markdown")
+        await update.message.reply_text(
+            f"✅ Username set to: {username}\n\n"
+            "You have *5 free credits* to generate AI faces this month.\nUse /generate to get your first AI face!",
+            parse_mode="Markdown"
+        )
     else:
         await update.message.reply_text("Please use /generate to get AI faces or /help for commands.")
 
@@ -96,7 +106,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reset_monthly_credits(user)
 
-    if user["last_ad_day"] != today_str:
+    if user.get("last_ad_day") != today_str:
         user["ads_used_today"] = 0
         user["last_ad_day"] = today_str
 
@@ -190,17 +200,16 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❓ Unknown command. Please use /start, /generate, /stats, or other valid commands.")
 
-def main():
-    from telegram import Bot
-    from telegram.ext import Application
+async def delete_webhook(bot):
+    await bot.delete_webhook(drop_pending_updates=True)
 
-    TOKEN = "7870088297:AAHVv5rs5GbQ9iAG764aKFX64VrC36Tn6XQ"
+def main():
+    TOKEN = "7870088297:AAHqUayOSDbrZXv4iwdWkV3V5_ulC_mBdMg"
+    bot = Bot(token=TOKEN)
     app = Application.builder().token(TOKEN).build()
 
-    # DELETE WEBHOOK BEFORE POLLING
-    bot = Bot(TOKEN)
-    import asyncio
-    asyncio.run(bot.delete_webhook(drop_pending_updates=True))
+    # Delete webhook properly with asyncio
+    asyncio.run(delete_webhook(bot))
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(agree|disagree)$"))
