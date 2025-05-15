@@ -6,21 +6,21 @@ import asyncio
 
 USER_DATA_FILE = "user_data.json"
 
-def load_user_data():
+def load_user_data() -> dict:
     try:
         with open(USER_DATA_FILE, "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {}
 
-def save_user_data(data):
+def save_user_data(data: dict) -> None:
     with open(USER_DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def get_month_str():
+def get_month_str() -> str:
     return datetime.datetime.now().strftime("%Y-%m")
 
-async def send_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("✅ Agree", callback_data="agree"),
          InlineKeyboardButton("❌ Disagree", callback_data="disagree")]
@@ -37,10 +37,10 @@ async def send_disclaimer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_disclaimer(update, context)
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
@@ -69,7 +69,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
     user_data = load_user_data()
 
@@ -85,15 +85,17 @@ async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Please use /generate to get AI faces or /help for commands.")
 
-def reset_monthly_credits(user):
+def reset_monthly_credits(user: dict) -> None:
     today = datetime.datetime.now()
     last_reset = datetime.datetime.strptime(user["last_reset"], "%Y-%m")
+    # Reset credits only if a new month has started
     if today.year > last_reset.year or today.month > last_reset.month:
+        # Calculate months passed since last reset
         months_passed = (today.year - last_reset.year) * 12 + (today.month - last_reset.month)
         user["credits"] += 5 * months_passed
         user["last_reset"] = today.strftime("%Y-%m")
 
-async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
     user_data = load_user_data()
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -106,6 +108,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reset_monthly_credits(user)
 
+    # Reset daily ad count if new day
     if user.get("last_ad_day") != today_str:
         user["ads_used_today"] = 0
         user["last_ad_day"] = today_str
@@ -134,11 +137,11 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     save_user_data(user_data)
 
-async def send_ai_image(update: Update):
+async def send_ai_image(update: Update) -> None:
     img_url = "https://thispersondoesnotexist.com/image"
     await update.message.reply_photo(photo=img_url, caption="🖼️ Here is your AI-generated face! These images are AI-generated.")
 
-async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
@@ -161,13 +164,14 @@ async def watch_ad_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("▶️ Playing ad... Please wait a moment.")
 
+    # Simulate ad watch and credit
     user["credits"] += 1
     user["ads_used_today"] += 1
     save_user_data(user_data)
 
     await query.message.reply_text("✅ Thanks for watching the ad! You have been awarded 1 credit. Use /generate to get your AI face.")
 
-async def buy_sub_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_sub_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
@@ -176,7 +180,7 @@ async def buy_sub_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Contact @yourtelegramhandle for payment and subscription activation."
     )
 
-async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
     user_data = load_user_data()
 
@@ -185,28 +189,35 @@ async def stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = user_data[user_id]
-    next_reset = (datetime.datetime.strptime(user["last_reset"], "%Y-%m") + datetime.timedelta(days=31)).strftime("%Y-%m")
+
+    # Calculate next reset (first day of next month)
+    last_reset_date = datetime.datetime.strptime(user["last_reset"], "%Y-%m")
+    if last_reset_date.month == 12:
+        next_reset = datetime.datetime(year=last_reset_date.year + 1, month=1, day=1)
+    else:
+        next_reset = datetime.datetime(year=last_reset_date.year, month=last_reset_date.month + 1, day=1)
+
     subscribed = "✅" if user.get("subscribed", False) else "❌"
 
     stats_text = (
         f"👤 Username: {user.get('username', 'N/A')}\n"
         f"💳 Credits left: {user.get('credits', 0)}\n"
         f"🔔 Subscribed: {subscribed}\n"
-        f"📅 Next monthly reset: {next_reset}\n"
+        f"📅 Next monthly reset: {next_reset.strftime('%Y-%m-%d')}\n"
         f"▶️ Ads watched today: {user.get('ads_used_today', 0)}"
     )
     await update.message.reply_text(stats_text)
 
-async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("❓ Unknown command. Please use /start, /generate, /stats, or other valid commands.")
 
-async def main():
+async def main() -> None:
     TOKEN = "7870088297:AAHqUayOSDbrZXv4iwdWkV3V5_ulC_mBdMg"
     bot = Bot(token=TOKEN)
-    
-    # Properly delete webhook
+
+    # Properly delete webhook to avoid conflicts
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
